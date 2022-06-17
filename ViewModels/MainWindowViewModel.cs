@@ -1,4 +1,5 @@
 ﻿using AdonisUI;
+using Diesel09EngineFormats;
 using DieselBundleViewer.Models;
 using DieselBundleViewer.Objects;
 using DieselBundleViewer.Services;
@@ -29,7 +30,8 @@ namespace DieselBundleViewer.ViewModels
     {
         #region Properties / Fields
         private string _title = "Diesel Bundle Viewer";
-        public PackageDatabase DB { get; private set; }
+        public PackageDatabase BLB_DB { get; private set; }
+        public LHD LHD_DB { get; private set; }
         public TreeEntryViewModel Root { get; set; }
 
         public string Title { get => _title; set => SetProperty(ref _title, value); }
@@ -76,7 +78,7 @@ namespace DieselBundleViewer.ViewModels
         public DelegateCommand ForwardDir { get; }
         public DelegateCommand BackDir { get; }
         public DelegateCommand OnKeyDown { get; }
-        public DelegateCommand CloseBLB { get; }
+        public DelegateCommand CloseFile { get; }
         public DelegateCommand<string> SetViewStyle { get; }
         public DelegateCommand OpenHowToUse { get; }
         public DelegateCommand ExtractAll { get; }
@@ -110,7 +112,7 @@ namespace DieselBundleViewer.ViewModels
             //Commands / Events
             OpenFileDialog = new DelegateCommand(OpenFileDialogExec);
             OpenFile = new DelegateCommand<string>(OpenFileExec);
-            CloseBLB = new DelegateCommand(CloseBLBExec, () => Root != null || cancelLastTask != null);
+            CloseFile = new DelegateCommand(CloseFileExec, () => Root != null || cancelLastTask != null);
             OpenBundleSelectorDialog = new DelegateCommand(OpenBundleSelectorDialogExec, () => Root != null);
             OpenFindDialog = new DelegateCommand(OpenFindDialogExec, () => Root != null);
             BackDir = new DelegateCommand(BackDirExec, ()=> CurrentPage?.Previous != null);
@@ -125,12 +127,14 @@ namespace DieselBundleViewer.ViewModels
             Utils.OnMouseMoved += OnMouseMoved;
 
             //Set status to default
-            CloseBLBExec();
+            CloseFileExec();
 
             //Grid or list?
             EntriesStyle = new EntryListView();
 
             UpdateSettings();
+
+            OpenFileExec("C:\\Users\\Connie\\Downloads\\Terminator.Salvation\\Terminator Salvation\\bundles\\game.lhd");
         }
 
         #region Commands
@@ -270,7 +274,7 @@ namespace DieselBundleViewer.ViewModels
 
         public async void OpenFileDialogExec()
         {
-            OpenFileDialog ofd = new OpenFileDialog { Filter = "Bundle Database File (*.blb)|*.blb"};
+            OpenFileDialog ofd = new OpenFileDialog { Filter = "Bundle Database File (*.blb, *.lhd)|*.blb;*.lhd" };
             
             //Here we try to default to 2 very possible directories of PD2 which most users will use it for.
             if(!RecentFilesVis)
@@ -303,13 +307,20 @@ namespace DieselBundleViewer.ViewModels
 
                 RaisePropertyChanged("RecentFilesVis");
 
-                await OpenBLBFile(fileName);
+                OpenFileExec(fileName);
             }
         }
 
         public async void OpenFileExec(string fileName)
         {
-            await OpenBLBFile(fileName);
+            switch(Path.GetExtension(fileName)) {
+                case ".blb":
+                    await OpenBLBFile(fileName);
+                    break;
+                case ".lhd":
+                    await OpenLHDFile(fileName);
+                    break;
+			}
         }
 
         public void ExtractAllExec()
@@ -318,12 +329,12 @@ namespace DieselBundleViewer.ViewModels
                 FileManager.SaveMultiple(Root.Owner.GetAllChildren(), CurrentDir);
         }
 
-        public void CloseBLBExec()
+        public void CloseFileExec()
         {
             if (cancelLastTask != null)
                 cancelLastTask.Cancel();
 
-            Status = "Start by opening a blb file. Press 'File->Open' and navigate to the assets directory of the game";
+            Status = "Start by opening a blb or lhd file. Press 'File->Open' and navigate to the assets directory of the game";
             Pages.Clear();
             CurrentDir = "";
             FileStatus = "";
@@ -333,7 +344,8 @@ namespace DieselBundleViewer.ViewModels
                 Bundles = null;
                 FileEntries = null;
                 Root = null;
-                DB = null;
+                BLB_DB = null;
+                LHD_DB = null;
                 PackageHeaders.Clear();
                 ToRender.Clear();
                 FoldersToRender.Clear();
@@ -342,7 +354,7 @@ namespace DieselBundleViewer.ViewModels
                 GC.Collect();
                 OpenFindDialog.RaiseCanExecuteChanged();
                 ExtractAll.RaiseCanExecuteChanged();
-                CloseBLB.RaiseCanExecuteChanged();
+                CloseFile.RaiseCanExecuteChanged();
                 OpenBundleSelectorDialog.RaiseCanExecuteChanged();
             }
         }
@@ -353,12 +365,12 @@ namespace DieselBundleViewer.ViewModels
             Stopwatch timer = new Stopwatch();
             timer.Start();
 
-            CloseBLBExec();
+            CloseFileExec();
 
             CancellationTokenSource CancelSource = new CancellationTokenSource();
             cancelLastTask = CancelSource;
 
-            CloseBLB.RaiseCanExecuteChanged();
+            CloseFile.RaiseCanExecuteChanged();
 
             await Task.Run(() =>
             {
@@ -372,12 +384,12 @@ namespace DieselBundleViewer.ViewModels
                 AssetsDir = Path.GetDirectoryName(filePath);
                 Status = "Reading blb file";
 
-                DB = new PackageDatabase(filePath);
+                BLB_DB = new PackageDatabase(filePath);
                 Status = "Getting bundle headers";
 
                 List<string> Files = Directory.EnumerateFiles(AssetsDir, "*.bundle").ToList();
 
-                var entries = DB.GetDatabaseEntries();
+                var entries = BLB_DB.GetDatabaseEntries();
                 FileEntries = DatabaseEntryToFileEntry(entries);
 
                 bool foundHashlist = false;
@@ -412,7 +424,7 @@ namespace DieselBundleViewer.ViewModels
 
                         if (!foundHashlist)
                         {
-                            DatabaseEntry ne = DB.EntryFromID(be.ID);
+                            DatabaseEntry ne = BLB_DB.EntryFromID(be.ID);
                             if (ne._path == 0x9234DD22C60D71B8)
                             {
                                 Console.WriteLine("Found hashlist, loading...");
@@ -456,7 +468,69 @@ namespace DieselBundleViewer.ViewModels
             OpenFindDialog.RaiseCanExecuteChanged();
             ExtractAll.RaiseCanExecuteChanged();
             OpenBundleSelectorDialog.RaiseCanExecuteChanged();
-            CloseBLB.RaiseCanExecuteChanged();
+            CloseFile.RaiseCanExecuteChanged();
+
+            Status = $"Done. Took {timer.ElapsedMilliseconds / 1000} seconds";
+
+            Bundles = PackageHeaders.Keys.ToList();
+            FoldersToRender.Clear();
+            FoldersToRender.Add(Root);
+
+            //Finally, render the items.
+            RenderNewItems();
+        }
+
+        public async Task OpenLHDFile(string filePath) {
+            Stopwatch timer = new Stopwatch();
+            timer.Start();
+
+            CloseFileExec();
+
+            CancellationTokenSource CancelSource = new CancellationTokenSource();
+            cancelLastTask = CancelSource;
+
+            CloseFile.RaiseCanExecuteChanged();
+
+            await Task.Run(() => {
+                if (CancelSource.IsCancellationRequested)
+                    return;
+
+                //Create the root tree entry, here all other folders will reside.
+                Root = new TreeEntryViewModel(this, new FolderEntry { EntryPath = "", Name = "bundles" });
+
+                Status = "Preparing to open lhd file...";
+                AssetsDir = Path.GetDirectoryName(filePath);
+                Status = "Reading lhd file";
+
+                LHD_DB = new LHD(filePath);
+                Status = "Getting lhd entries";
+
+                FileEntries = LHDDatabaseEntryToFileEntry(LHD_DB.GetDatabaseEntries());
+
+                foreach (var fe in FileEntries.Values) {
+                    if (CancelSource.IsCancellationRequested)
+                        return;
+
+                    fe.LoadPath();
+                    RawFiles.Add(new Tuple<Idstring, Idstring, Idstring>(fe.PathIds, fe.LanguageIds, fe.ExtensionIds), fe);
+                    if (Root != null)
+                        Root.Owner.AddFileEntry(fe);
+                }
+
+                GC.Collect();
+            });
+
+            timer.Stop();
+
+            if (CancelSource.IsCancellationRequested)
+                return;
+
+            cancelLastTask = null;
+
+            OpenFindDialog.RaiseCanExecuteChanged();
+            ExtractAll.RaiseCanExecuteChanged();
+            OpenBundleSelectorDialog.RaiseCanExecuteChanged();
+            CloseFile.RaiseCanExecuteChanged();
 
             Status = $"Done. Took {timer.ElapsedMilliseconds / 1000} seconds";
 
@@ -653,6 +727,26 @@ namespace DieselBundleViewer.ViewModels
                 fileEntries.Add(ne.ID, fe);
             }
             return fileEntries;
+        }
+
+        public Dictionary<uint, FileEntry> LHDDatabaseEntryToFileEntry(List<LHDDatabaseEntry> entries) {
+            Dictionary<uint, FileEntry> fileEntries = new Dictionary<uint, FileEntry>();
+
+            foreach (LHDDatabaseEntry databaseEntry in entries) {
+                FileEntry fileEntry = new FileEntry();
+
+                string path = Path.ChangeExtension(databaseEntry.fullPath, "").Replace("\\", "/");
+                path = path.Remove(path.Length - 1);
+
+                string extension = Path.GetExtension(databaseEntry.fullPath).Remove(0, 1);
+
+                fileEntry.PathIds = new Idstring(path);
+                fileEntry.ExtensionIds = new Idstring(extension);
+
+                fileEntries.Add((uint) fileEntries.Count + 1, fileEntry);
+            }
+
+			return fileEntries;
         }
 
         public bool IsSelectingMultiple()
