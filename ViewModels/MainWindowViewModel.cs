@@ -133,8 +133,6 @@ namespace DieselBundleViewer.ViewModels
             EntriesStyle = new EntryListView();
 
             UpdateSettings();
-
-            OpenFileExec("C:\\Users\\Connie\\Downloads\\Terminator.Salvation\\Terminator Salvation\\bundles\\game.lhd");
         }
 
         #region Commands
@@ -362,6 +360,8 @@ namespace DieselBundleViewer.ViewModels
 
         public async Task OpenBLBFile(string filePath)
         {
+            FileManager.forceBundleExtension = ".blb";
+
             Stopwatch timer = new Stopwatch();
             timer.Start();
 
@@ -481,6 +481,8 @@ namespace DieselBundleViewer.ViewModels
         }
 
         public async Task OpenLHDFile(string filePath) {
+            FileManager.forceBundleExtension = ".fcl";
+
             Stopwatch timer = new Stopwatch();
             timer.Start();
 
@@ -505,7 +507,8 @@ namespace DieselBundleViewer.ViewModels
                 LHD_DB = new LHD(filePath);
                 Status = "Getting lhd entries";
 
-                FileEntries = LHDDatabaseEntryToFileEntry(LHD_DB.GetDatabaseEntries());
+                List<LHDDatabaseEntry> entries = LHD_DB.GetDatabaseEntries();
+                FileEntries = LHDDatabaseEntryToFileEntry(entries);
 
                 foreach (var fe in FileEntries.Values) {
                     if (CancelSource.IsCancellationRequested)
@@ -515,6 +518,38 @@ namespace DieselBundleViewer.ViewModels
                     RawFiles.Add(new Tuple<Idstring, Idstring, Idstring>(fe.PathIds, fe.LanguageIds, fe.ExtensionIds), fe);
                     if (Root != null)
                         Root.Owner.AddFileEntry(fe);
+                }
+
+                Status = "Getting lhd fcls";
+
+                Dictionary<string, PackageHeader> tempPH = new Dictionary<string, PackageHeader>();
+
+                foreach(KeyValuePair<string, uint> fclEntry in LHD_DB.FCLEntries) {
+                    Status = string.Format("Loading fcl {0}", fclEntry);
+
+                    PackageHeader bundle = new PackageHeader();
+
+                    bundle.Name = new Idstring(fclEntry.Key);
+                    bundle.BundleName = fclEntry.Key;
+                    bundle.Length = fclEntry.Value;
+
+                    PackageHeaders.Add(bundle.Name, bundle);
+                    tempPH.Add(bundle.BundleName, bundle);
+                }
+
+                Status = "Assigning fcls";
+
+                uint index = 0;
+                foreach (LHDDatabaseEntry databaseEntry in entries) {
+                    FileEntry fileEntry = FileEntries[index];
+                    index ++;
+
+                    PackageFileEntry packageFileEntry = new PackageFileEntry();
+                    packageFileEntry.Address = databaseEntry.offset;
+                    packageFileEntry.Length = (int)databaseEntry.size;
+                    packageFileEntry.Parent = tempPH[databaseEntry.fclSource];
+
+                    fileEntry.AddBundleEntry(packageFileEntry);
                 }
 
                 GC.Collect();
@@ -732,6 +767,7 @@ namespace DieselBundleViewer.ViewModels
         public Dictionary<uint, FileEntry> LHDDatabaseEntryToFileEntry(List<LHDDatabaseEntry> entries) {
             Dictionary<uint, FileEntry> fileEntries = new Dictionary<uint, FileEntry>();
 
+            uint index = 0;
             foreach (LHDDatabaseEntry databaseEntry in entries) {
                 FileEntry fileEntry = new FileEntry();
 
@@ -743,7 +779,9 @@ namespace DieselBundleViewer.ViewModels
                 fileEntry.PathIds = new Idstring(path);
                 fileEntry.ExtensionIds = new Idstring(extension);
 
-                fileEntries.Add((uint) fileEntries.Count + 1, fileEntry);
+                fileEntries.Add(index, fileEntry);
+
+                index++;
             }
 
 			return fileEntries;

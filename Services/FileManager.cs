@@ -19,6 +19,8 @@ namespace DieselBundleViewer.Services
 {
     public static class FileManager
     {
+        public static string forceBundleExtension;
+
         public class TempFile : IDisposable
         {
 

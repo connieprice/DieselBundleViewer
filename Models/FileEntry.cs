@@ -2,6 +2,7 @@
 using DieselBundleViewer.ViewModels;
 using DieselEngineFormats.Bundle;
 using DieselEngineFormats.Utils;
+using DieselEngineFormats.ZLib;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -124,7 +125,7 @@ namespace DieselBundleViewer.Models
         /// <returns>true if the file has data</returns>
         public bool HasData()
         {
-            return Settings.Data.DisplayEmptyFiles || Type == "cooked_physics" || Size > 0;
+            return Settings.Data.DisplayEmptyFiles || Type == "cooked_physics" || Type == "cok"|| Size > 0;
         }
 
         public object FileData(PackageFileEntry be = null, FormatConverter exporter = null)
@@ -135,6 +136,50 @@ namespace DieselBundleViewer.Models
            {
                 MemoryStream stream = FileStream(be);
                 return stream == null ? null : exporter.Export(FileStream(be));
+            }
+        }
+
+        public static Stream UnpackFCL(FileStream fs) {
+            if (FileManager.forceBundleExtension != ".fcl") {
+                return fs;
+            }
+
+            using (BinaryReader br = new BinaryReader(fs)) {
+                uint count = br.ReadUInt32();
+                br.ReadUInt32();
+
+                uint[] offsets = new uint[count];
+                int[] fileChunks = new int[count];
+
+                for (int i = 0; i < count; i++) {
+                    offsets[i] = br.ReadUInt32();
+                    fileChunks[i] = br.ReadInt32();
+                }
+
+                MemoryStream unpacked = new MemoryStream();
+
+                for (int i = 0; i < count; i++) {
+                    br.BaseStream.Position = offsets[i];
+
+                    byte[] data = br.ReadBytes(fileChunks[i]);
+
+                    if (data[0] == 0x78 && data[1] == 0x9c) {
+                        using (MemoryStream compressed = new MemoryStream(data)) {
+                            using (MemoryStream decompressed = new MemoryStream()) {
+                                General.ZLibDecompress(compressed, decompressed);
+
+                                decompressed.Position = 0;
+                                unpacked.Write(decompressed.ToArray());
+                            }
+                        }
+                    } else {
+                        unpacked.Write(data);
+                    }
+                }
+                
+                fs.Close();
+
+                return unpacked;
             }
         }
 
@@ -150,7 +195,12 @@ namespace DieselBundleViewer.Models
                 return null;
             }
 
-            string bundle_path = Path.Combine(Utils.CurrentWindow.AssetsDir, entry.Parent.BundleName + ".bundle");
+            string extension = ".bundle";
+            if (FileManager.forceBundleExtension != null) {
+                extension = FileManager.forceBundleExtension;
+            }
+
+            string bundle_path = Path.Combine(Utils.CurrentWindow.AssetsDir, entry.Parent.BundleName + extension);
             if (!File.Exists(bundle_path))
             {
                 Console.WriteLine("Bundle: {0}, does not exist", bundle_path);
@@ -159,8 +209,9 @@ namespace DieselBundleViewer.Models
 
             try
             {
-                using FileStream fs = new FileStream(bundle_path, FileMode.Open, FileAccess.Read);
+                using Stream fs = UnpackFCL(new FileStream(bundle_path, FileMode.Open, FileAccess.Read));
                 using BinaryReader br = new BinaryReader(fs);
+
                 if (entry.Length != 0)
                 {
                     fs.Position = entry.Address;
