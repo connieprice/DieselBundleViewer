@@ -360,7 +360,7 @@ namespace DieselBundleViewer.ViewModels
 
         public async Task OpenBLBFile(string filePath)
         {
-            FileManager.forceBundleExtension = ".blb";
+            FileManager.forceBundleExtension = ".bundle";
 
             Stopwatch timer = new Stopwatch();
             timer.Start();
