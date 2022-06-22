@@ -139,10 +139,19 @@ namespace DieselBundleViewer.Models
             }
         }
 
-        public static Stream UnpackFCL(FileStream fs) {
+        public static Dictionary<string, Stream> UnpackedCache = new Dictionary<string, Stream>();
+        public static Stream UnpackFCL(string name, FileStream fs) {
             if (FileManager.forceBundleExtension != ".fcl") {
                 return fs;
             }
+
+            if ( UnpackedCache.ContainsKey(name) ) {
+                MemoryStream unpacked = new MemoryStream();
+                UnpackedCache[name].Position = 0;
+                UnpackedCache[name].CopyTo(unpacked);
+
+                return unpacked;
+			}
 
             using (BinaryReader br = new BinaryReader(fs)) {
                 uint count = br.ReadUInt32();
@@ -179,6 +188,10 @@ namespace DieselBundleViewer.Models
                 
                 fs.Close();
 
+                UnpackedCache[name] = new MemoryStream();
+                unpacked.Position = 0;
+                unpacked.CopyTo(UnpackedCache[name]);
+
                 return unpacked;
             }
         }
@@ -209,7 +222,7 @@ namespace DieselBundleViewer.Models
 
             try
             {
-                using Stream fs = UnpackFCL(new FileStream(bundle_path, FileMode.Open, FileAccess.Read));
+                using Stream fs = UnpackFCL(entry.Parent.BundleName, new FileStream(bundle_path, FileMode.Open, FileAccess.Read));
                 using BinaryReader br = new BinaryReader(fs);
 
                 if (entry.Length != 0)

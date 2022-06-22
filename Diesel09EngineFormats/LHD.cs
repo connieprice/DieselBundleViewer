@@ -107,7 +107,7 @@ namespace Diesel09EngineFormats {
 
                         uint fclSize = 0;
                         string fclPath = fclDir + "\\" + fclName + ".fcl";
-                        using (Stream fclFile = FileEntry.UnpackFCL(new FileStream(fclPath, FileMode.Open, FileAccess.Read))) {
+                        using (Stream fclFile = FileEntry.UnpackFCL(fclName, new FileStream(fclPath, FileMode.Open, FileAccess.Read))) {
                             fclSize = (uint)fclFile.Length;
                         }
 
